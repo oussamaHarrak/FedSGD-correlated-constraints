@@ -294,9 +294,7 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
                 print(f"loss : {debiased_loss_rnd}")
             
         else : 
-            print(f"rnd where M_t = 0 : {rnd + 1}")
             if (rnd + 1) % 100 == 0 : 
-                print(f"boom boom boom boom")
                 print(f"\n--- Communication Round {rnd+1} ---")
                 rounds_debiased.append(rnd - 1)
                 avg_grads_debiased.append(avg_grads_debiased_total[c - 1])
