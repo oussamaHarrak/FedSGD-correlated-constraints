@@ -302,7 +302,6 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
                 debiased_loss_rnds.append(debiased_loss_rnd)
                 print(f"loss : {debiased_loss_rnd}")
            
-    unbiased_th_loss = test_model(global_debiased, dataloaders[1]) 
 
    
     return biased_loss_rnds , unbiased_loss_rnds , debiased_loss_rnds , avg_grads_biased , avg_grads_unbiased , avg_grads_debiased ,  rounds_biaised , rounds_debiased , biases_total
