@@ -1,7 +1,7 @@
 from model import SimpleMNISTModel
 from data_loader import get_dataloaders_iid,get_dataloaders_one_label_per_client,get_dataloaders_group_iid_ap,get_dataloaders_label_per_ap,get_dataloaders_label_distribution_per_ap
 from server import average_models,variance_gradients
-from client import compute_stochastic_gradient,compute_online_bias
+from client import compute_stochastic_gradient,compute_stochastic_gradient_printed,compute_full_gradient,compute_online_bias
 from server import average_gradients,average_gradients_unbiaised,average_gradients_unbiaised_corr,apply_gradient,apply_gradient_clipped,monte_carlo_expectation_corr,real_expectation_corr,average_gradients_unbiaised_3groups_corr,monte_carlo_expectation_3groups_corr,apply_gradient_normalized
 import matplotlib.pyplot as plt
 from collections import Counter
@@ -64,7 +64,7 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
     #dataloaders = get_dataloaders_iid() #get_dataloaders_corr2()
     #dataloaders = get_dataloaders_one_label_per_client()
     #dtaloaders = get_dataloaders_iid()
-
+    
     group1 = list(range(M1))
     group2 = list(range(M1, M1 + M2))
     group3 = list(range(M1 + M2 , M1 + M2 + M3))
@@ -101,22 +101,30 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
     epsilons_access[2] = e3
 
 
-    epsilons_active = {0 : 0.93,1 : 0.92 ,2  : 0.94,3 : 0.05,4 : 0.02, 5 : 0.05  , 6 : 0.03 , 7 : 0.92 , 8: 0.97 , 9 : 0.92}
-    epsilons_nonactive = {0 : 0.9,1 : 0.8,2 : 0.9,3 : 0.8,4 : 0.9 , 5: 0.8 , 6 : 0.8 , 7 : 0.8 , 8 : 0.9 , 9 : 0.8}
+    epsilons_active = {0 : 0,1 : 0 ,2  : 0,3 : 0,4 : 0, 5 : 0  , 6 : 0 , 7 : 0 , 8: 0 , 9 : 0}
+    epsilons_nonactive = {0 : 0.9,1 : 0.9,2 : 0.9,3 : 0.9,4 : 0.9 , 5: 0.9 , 6 : 0.9 , 7 : 0.9 , 8 : 0.9 , 9 : 0.9}
    
     global_biased = SimpleMNISTModel()
+    """
+    for name, param in global_biased.named_parameters():
+        print(f"global biased : {name}: {param.data}")
+    """
+
     lr = 0.01 #0.0447 #0.01 $1/sqrt(T) = 0,00005
     K = 1
-
+    c = 0
     biased_loss_rnds= []
     unbiased_loss_rnds = []
     unbiased_th_loss_rnds = []
     rounds_biaised = []
     
     avg_grads_biased = []
+    avg_grads_biased_total = []
+
 
     print("Biased Training")
     # Biased Training
+    keys = ['fc.0.weight','fc.0.bias','fc.2.weight','fc.2.bias']
     for rnd in range(N):
         M_t = 0
         grads_all = []
@@ -147,28 +155,49 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
                 local = SimpleMNISTModel()
                 local.load_state_dict(global_biased.state_dict()) #Get the latest global model 
                 grad = compute_stochastic_gradient(local, dataloaders[cid], K)
-                grads_all.append(grad)
+
+                #grad = compute_full_gradient(local , dataloaders[cid])
+                """
+                if cid in [0,1,2,7,8,9] :
+                    grad = {key: -1 * grad[key] for key in keys}"
+                """
+            else :
+                grad  = {key: 0.0 for key in keys}
+
+            grads_all.append(grad)
+
          
         if M_t != 0 :
-          
+            c += 1
             avg_grad = average_gradients(grads_all,M_t)#,client_lengths)
             apply_gradient(global_biased, avg_grad, lr)
-
+            avg_grad_array = np.concatenate([v.ravel() for v in avg_grad.values()])
+            norm = np.linalg.norm(avg_grad_array)
+            avg_grads_biased_total.append(norm ** 2)
             if (rnd + 1) % 100 == 0 : 
                 print(f"\n--- Communication Round {rnd+1} ---")
-                avg_grad_array = np.concatenate([v.ravel() for v in avg_grad.values()])
-                norm = np.linalg.norm(avg_grad_array)
-                avg_grads_biased.append(norm**2)
-                biased_loss_rnd = test_model(global_biased, dataloaders[1]) 
                 rounds_biaised.append(rnd)
-                #biased_loss_rnds.append(biased_loss_rnd)
-                biased_loss_rnds.append(biased_loss_rnd )#if grads_all else np.nan)
+                avg_grads_biased.append(norm**2)
+                biased_loss_rnd = test_model(global_biased, dataloaders[1])   
+                biased_loss_rnds.append(biased_loss_rnd)
                 print(f"loss : {biased_loss_rnd}")
-        
+        else : 
+            if (rnd + 1) % 100 == 0 : 
+                print(f"\n--- Communication Round {rnd+1} ---")
+                rounds_biaised.append(rnd - 1)
+                avg_grads_biased.append(avg_grads_biased_total[c - 1])
+                biased_loss_rnd = test_model(global_biased, dataloaders[1])   
+                biased_loss_rnds.append(biased_loss_rnd)
+                print(f"loss : {biased_loss_rnd}")
+            
      # Unbiased Training
     print("Unbiased Training")
-   
+    
     global_unbiased = SimpleMNISTModel()
+    """
+    for name, param in global_unbiased.named_parameters():
+        print(f"global_unbiased : {name}: {param.data}")
+    """
     avg_grads_unbiased = []
     M_t = M
     for rnd in range(N):
@@ -176,7 +205,13 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
         for cid in dataloaders:
             local = SimpleMNISTModel()
             local.load_state_dict(global_unbiased.state_dict())
+            #print(f"client's used data : {cid}")
             grad = compute_stochastic_gradient(local, dataloaders[cid], K)
+            #grad = compute_full_gradient(local , dataloaders[cid])
+            """
+            if cid in [0,1,2,7,8,9] :
+                grad = {key: -1 * grad[key] for key in keys}
+            """
             grads_all.append(grad)
         avg_grad = average_gradients(grads_all,M_t)#,client_lengths)
         apply_gradient(global_unbiased, avg_grad, lr)
@@ -196,10 +231,14 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
     # UnBiased Theoritical Training (dividing by the biais)
     print("UnBiased Theoritical Training (dividing by the biais)")
     global_debiased = SimpleMNISTModel()
+    """
+    for name, param in global_debiased.named_parameters():
+        print(f"global_debiased : {name}: {param.data}")
+    """
     epsilons = []
     debiased_loss_rnds = []
+    
     """
-   
     biases_real = []
     ap_list = [1,2]
     
@@ -207,11 +246,14 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
         bias2 = real_expectation_corr(m,M_t, epsilons_active, epsilons_nonactive ,epsilons_access,ap_list,group1,group2)
         biases_real.append(bias2)
     """
-    biases = []
+    """
+    biases_monte = []
     for m in clients: 
         bias = monte_carlo_expectation_3groups_corr(m, group1, group2,group3, epsilons_access, epsilons_active, epsilons_nonactive, N=10000)
-        biases.append(bias)
-    mean_bias = np.mean(biases)
+        biases_monte.append(bias)
+    #print(f"biases_monte : {biases_monte}")
+    """
+    #mean_bias = np.mean(biases)
 
 
     lr = 0.01
@@ -221,16 +263,23 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
     biases_total = []
     X = [[] for _ in range(M)]
     c = 0
+    delta = 0.01
     for rnd in range(N):
+        """
+        if rnd < 400 :
+            delta = 0.1
+        else :
+            delta = 0.01
+        """
         M_t = 0
        
         grads_all = []  
         biases = []
+        biases_no_beta = []
         participations = np.zeros(M)
         beta = 1 - 1/sqrt(rnd + 1)
         #beta = (rnd + 0.001)/N
         
-
         X1 = np.random.binomial(1, 1 - epsilons_access[0])
         X2 = np.random.binomial(1, 1 - epsilons_access[1])
         X3 = np.random.binomial(1, 1 - epsilons_access[2])
@@ -258,27 +307,38 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
                 local = SimpleMNISTModel()
                 local.load_state_dict(global_debiased.state_dict()) #Get the latest global model 
                 grad = compute_stochastic_gradient(local, dataloaders[cid], K)
-                grads_all.append(grad)  
+                #grad = compute_stochastic_gradient(local, dataloaders[cid], K)
+                #grad = compute_full_gradient(local , dataloaders[cid])
+
                 M_t += 1
-        
+            else :
+                grad  = {key: 0.0 for key in keys}
+            grads_all.append(grad)
             
         
-        delta = max(0.3 / (rnd + 1)**0.3, 0.05)
-
-       
+        #delta = max(0.3 / (rnd + 1)**0.3, 0.05)
+        #delta = 0.5
+        #delta = 0.1/(rnd + 1)
+        #print(f"M_t : {M_t}")
         for cid in dataloaders : 
             if participations[cid] == 1 : 
                 X[cid].append(1/M_t)
             else :
                 X[cid].append(0)
-           
+            
             bias = compute_online_bias(X[cid], delta)
-            biases.append(bias**beta)
+            biases_no_beta.append(bias)
+            biases.append(bias)#**beta)
+        #print(f"biases : {biases}")
         mean_bias = np.mean(biases)
         biases_total.append(biases)
+        
+        #print(f"X : {X  }")
         if M_t != 0:
             c += 1
             max_norm = min(10 , 1 + 5 / sqrt(rnd + 1))
+            #print(f"grads_all : {grads_all}")
+            #print(f"biases : {biases}")
             avg_grad = average_gradients_unbiaised_3groups_corr(grads_all,group1,group2,group3, biases)#,client_lengths) 
             lr = 0.01 * mean_bias
             avg_grad_array = np.concatenate([v.ravel() for v in avg_grad.values()])
@@ -294,9 +354,7 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
                 print(f"loss : {debiased_loss_rnd}")
             
         else : 
-            print(f"rnd where M_t = 0 : {rnd + 1}")
             if (rnd + 1) % 100 == 0 : 
-                print(f"boom boom boom boom")
                 print(f"\n--- Communication Round {rnd+1} ---")
                 rounds_debiased.append(rnd - 1)
                 avg_grads_debiased.append(avg_grads_debiased_total[c - 1])
@@ -304,7 +362,6 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
                 debiased_loss_rnds.append(debiased_loss_rnd)
                 print(f"loss : {debiased_loss_rnd}")
            
-    unbiased_th_loss = test_model(global_debiased, dataloaders[1]) 
 
    
     return biased_loss_rnds , unbiased_loss_rnds , debiased_loss_rnds , avg_grads_biased , avg_grads_unbiased , avg_grads_debiased ,  rounds_biaised , rounds_debiased , biases_total
@@ -354,7 +411,7 @@ def main():
     plt.show() 
     """
 
-    seeds = [0 , 1 , 2 , 3 , 4]
+    seeds = [1]
     all_biased, all_unbiased, all_debiased = [], [], []
     rounds_shared = None
     rounds2_shared = None
@@ -371,13 +428,15 @@ def main():
         rounds, 
         rounds2, 
         biases_total
-        ) = run_experiment(M1=3, M2=4, M3=3, e1=0.94, e2=0.02, e3=0.03, N=4001)
-
+        ) = run_experiment(M1=3, M2=4, M3=3, e1=0, e2=0, e3=0, N=1001)
+        print(f"len(avg_grads_biased)  : {len(avg_grads_biased)}")
+        print(f"len(avg_grads_unbiased) : {len(avg_grads_unbiased)}")
+        print(f"len(avg_grads_debiased) : {len(avg_grads_debiased)}")
         all_biased.append(avg_grads_biased)
         all_unbiased.append(avg_grads_unbiased)
         all_debiased.append(avg_grads_debiased)
 
-        print(f"rounds : {rounds} , rounds2 : {rounds2}")
+        #print(f"rounds : {rounds} , rounds2 : {rounds2}")
         if rounds_shared is None:
             rounds_shared = rounds
             rounds2_shared = rounds2
@@ -408,6 +467,8 @@ def main():
     plot_with_std(rounds_shared, biased_mean, biased_std, "Biased", 'blue', '-')
     plot_with_std(rounds2_shared, debiased_mean, debiased_std, "Debiased", 'red', '-')
     plot_with_std(rounds_shared, unbiased_mean[:min_len], unbiased_std[:min_len], "Unbiased", 'green', '--')
+    #plot_with_std(rounds_shared, debiased_mean, debiased_std, "Debiased", 'red', '-')
+    #plot_with_std(rounds2_shared, unbiased_mean[:min_len], unbiased_std[:min_len], "Unbiased", 'green', '--')
 
     plt.xlabel("Communication Round")
     plt.ylabel("Squared norm of the gradient of the loss function")
