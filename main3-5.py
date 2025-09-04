@@ -69,21 +69,22 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
     group2 = list(range(M1, M1 + M2))
     group3 = list(range(M1 + M2 , M1 + M2 + M3))
     M = M1 + M2 + M3
-    """
+    
     ap_to_clients = {
-    1: [0, 1, 2, 3],
-    2: [4, 5, 6],
+    1: [0, 1, 2],
+    2: [3 , 4, 5, 6],
     3: [7, 8, 9]
     }
 
     ap_to_labels = {
-    1: [0, 1, 2, 3],
-    2: [4, 5, 6],
-    3: [7, 8, 9]
+    1: [0],
+    2: [1],
+    3: [2]
 
-    }     
-    """  
-    dataloaders = get_dataloaders_group_iid_ap(32 , group1 , group2 , group3) #get_dataloaders_one_label_per_client(32,10) #get_dataloaders_one_label_per_client(32 , M , 0)
+    }   
+      
+    #dataloaders = get_dataloaders_group_iid_ap(32 , group1 , group2 , group3) #get_dataloaders_one_label_per_client(32,10) #get_dataloaders_one_label_per_client(32 , M , 0)
+    dataloaders = get_dataloaders_label_per_ap(32 , ap_to_clients , ap_to_labels )
     for cid, loader in dataloaders.items():
         labels = []
         for _, y in loader:
@@ -101,7 +102,7 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
     epsilons_access[2] = e3
 
 
-    epsilons_active = {0 : 0,1 : 0 ,2  : 0,3 : 0,4 : 0, 5 : 0  , 6 : 0 , 7 : 0 , 8: 0 , 9 : 0}
+    epsilons_active = {0 : 0.7,1 : 0.7 ,2  : 0.7,3 : 0.4,4 : 0.4, 5 : 0.4 , 6 : 0.4 , 7 : 0.7 , 8: 0.7 , 9 : 0.7}
     epsilons_nonactive = {0 : 0.9,1 : 0.9,2 : 0.9,3 : 0.9,4 : 0.9 , 5: 0.9 , 6 : 0.9 , 7 : 0.9 , 8 : 0.9 , 9 : 0.9}
    
     global_biased = SimpleMNISTModel()
@@ -228,8 +229,8 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
     
     
     
-    # UnBiased Theoritical Training (dividing by the biais)
-    print("UnBiased Theoritical Training (dividing by the biais)")
+    # Debiased Training (dividing by the biais)
+    print("Debiased Training (dividing by the biais)")
     global_debiased = SimpleMNISTModel()
     """
     for name, param in global_debiased.named_parameters():
@@ -251,8 +252,10 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
     for m in clients: 
         bias = monte_carlo_expectation_3groups_corr(m, group1, group2,group3, epsilons_access, epsilons_active, epsilons_nonactive, N=10000)
         biases_monte.append(bias)
-    #print(f"biases_monte : {biases_monte}")
+    print(f"estimated biases via monte : {biases_monte}")
     """
+    #print(f"biases_monte : {biases_monte}")
+    
     #mean_bias = np.mean(biases)
 
 
@@ -328,7 +331,7 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
             
             bias = compute_online_bias(X[cid], delta)
             biases_no_beta.append(bias)
-            biases.append(bias)#**beta)
+            biases.append(bias**beta)
         #print(f"biases : {biases}")
         mean_bias = np.mean(biases)
         biases_total.append(biases)
@@ -339,8 +342,8 @@ def run_experiment(M1, M2, M3, e1, e2 , e3 , N=500):
             max_norm = min(10 , 1 + 5 / sqrt(rnd + 1))
             #print(f"grads_all : {grads_all}")
             #print(f"biases : {biases}")
-            avg_grad = average_gradients_unbiaised_3groups_corr(grads_all,group1,group2,group3, biases)#,client_lengths) 
-            lr = 0.01 * mean_bias
+            avg_grad = average_gradients_unbiaised_3groups_corr(grads_all,group1,group2,group3, biases , M_t)#,client_lengths) 
+            lr = 0.01 #* mean_bias
             avg_grad_array = np.concatenate([v.ravel() for v in avg_grad.values()])
             norm = np.linalg.norm(avg_grad_array)
             apply_gradient(global_debiased, avg_grad, lr)
@@ -428,7 +431,10 @@ def main():
         rounds, 
         rounds2, 
         biases_total
-        ) = run_experiment(M1=3, M2=4, M3=3, e1=0, e2=0, e3=0, N=1001)
+        ) = run_experiment(M1=3, M2=4, M3=3, e1=0.9, e2=0.02, e3=0.9, N=3001)
+        biased_losses =   [i[0] for i in biased_loss_rnds]
+        unbiased_losses = [i[0] for i in unbiased_loss_rnds]
+        debiased_losses = [i[0] for i in debiased_loss_rnds]
         print(f"len(avg_grads_biased)  : {len(avg_grads_biased)}")
         print(f"len(avg_grads_unbiased) : {len(avg_grads_unbiased)}")
         print(f"len(avg_grads_debiased) : {len(avg_grads_debiased)}")
@@ -464,6 +470,21 @@ def main():
 
     min_len = min(len(rounds_shared), len(unbiased_mean))
 
+
+    plt.plot(rounds_shared, biased_losses, label="Biased", linestyle='-', marker='o')
+    plt.plot(rounds2_shared, debiased_losses , label="Debiaised", linestyle='-', marker='o',color = 'red')
+    plt.plot(rounds_shared, unbiased_losses , label="Unbiased", linestyle='--', marker='s')
+
+    plt.xlabel("Communication Round")
+    plt.ylabel("Training Loss")
+    plt.title("Comparison of Training Loss Over Rounds 3 labels one label per ap")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    #plt.ylim(0, 4) 
+    plt.show() 
+
+
     plot_with_std(rounds_shared, biased_mean, biased_std, "Biased", 'blue', '-')
     plot_with_std(rounds2_shared, debiased_mean, debiased_std, "Debiased", 'red', '-')
     plot_with_std(rounds_shared, unbiased_mean[:min_len], unbiased_std[:min_len], "Unbiased", 'green', '--')
@@ -472,7 +493,7 @@ def main():
 
     plt.xlabel("Communication Round")
     plt.ylabel("Squared norm of the gradient of the loss function")
-    plt.title("Gradient Norm Over Rounds (Averaged over 5 seeds)")
+    plt.title("Gradient Norm Over Rounds 3 labels one label per ap ")
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
