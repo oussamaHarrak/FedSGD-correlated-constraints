@@ -301,7 +301,7 @@ def variance_gradients(group1, group2, grads_list , epsilons_access, eps_active,
 
 
 
-def average_gradients_unbiaised(grads_list, epsilons , biases):
+def average_gradients_unbiaised(grads_list, epsilons , biases , M_t):
     agg = {}
     M = len(epsilons)
     for key in grads_list[0]:
@@ -312,10 +312,10 @@ def average_gradients_unbiaised(grads_list, epsilons , biases):
             bias = biases[i] #monte_carlo_expectation(i,epsilons,10000 )
             total += (g[key]/ (M * bias)) # *(client_lengths[i]/sum(client_lengths))  #(g[key]/ bias2)  #
         
-        agg[key] = total #/ M_t
+        agg[key] = total / M_t
     return agg
 
-def average_gradients_unbiaised_corr(grads_list,group1,group2, biases):#,client_lengths):
+def average_gradients_unbiaised_corr(grads_list,group1,group2, biases , M_t):#,client_lengths):
     agg = {}   
     M = len(group1) + len(group2) #+ len(group3)
     for key in grads_list[0]:
@@ -325,24 +325,33 @@ def average_gradients_unbiaised_corr(grads_list,group1,group2, biases):#,client_
             bias = biases[i] #monte_carlo_expectation_corr(i, group1, group2, epsilons_access, eps_active, eps_nonactive, N=10000) #Monte carlo estimation of the bias
             total += (g[key] / (M * bias))#* (client_lengths[i]/sum(client_lengths)) #
             
-        agg[key] = total #/ M_t #/ len(grads_list)
+        agg[key] = total / M_t# / M #/ M_t #/ len(grads_list)
     return agg#,variance_gradients(group1,group2,grads_list,epsilons_access,eps_active,eps_nonactive,M_t)
 
 
-def average_gradients_unbiaised_3groups_corr(grads_list,group1,group2,group3, biases):#,client_lengths):
+def average_gradients_unbiaised_3groups_corr(grads_list,group1,group2,group3, biases , M_t):#,client_lengths):
     agg = {}   
     M = len(group1) + len(group2) + len(group3)
+    #print(f"grads_list : {grads_list}")
     for key in grads_list[0]:
         total = 0
         for i, g in enumerate(grads_list):
 
             bias = biases[i] #monte_carlo_expectation_corr(i, group1, group2, epsilons_access, eps_active, eps_nonactive, N=10000) #Monte carlo estimation of the bias
-            total += (g[key] / (M * bias))#* (client_lengths[i]/sum(client_lengths)) #
-            
-        agg[key] = total #/ M_t #/ len(grads_list)
+            total += (g[key]) / (M * bias)#* (client_lengths[i]/sum(client_lengths)) #put the element of colomn i and row key each 
+            #print(f"client {i}  , bias : {bias}")
+            #print(f"client : {i} , bias : {bias}")#, bias : {bias}")
+
+        agg[key] = total / M_t  #/ M_t #/ len(grads_list)
+    #print(f"agg : {agg}")
+    #agg_array = np.concatenate([v.ravel() for v in agg.values()])
+    #norm = np.linalg.norm(agg_array)
+    #print(f"norm : {norm}")
+    #agg = {key: (agg[key]/norm) for key in agg.keys()}
+    #print(f"agg : {agg}")
     return agg
 
-def average_gradients_unbiaised_4groups_corr(grads_list,group1,group2,group3,group4, biases):#,client_lengths):
+def average_gradients_unbiaised_4groups_corr(grads_list,group1,group2,group3,group4, biases , M_t):#,client_lengths):
     agg = {}   
     M = len(group1) + len(group2) + len(group3) + len(group4)
     for key in grads_list[0]:
@@ -352,7 +361,7 @@ def average_gradients_unbiaised_4groups_corr(grads_list,group1,group2,group3,gro
             bias = biases[i] #monte_carlo_expectation_corr(i, group1, group2, epsilons_access, eps_active, eps_nonactive, N=10000) #Monte carlo estimation of the bias
             total += (g[key] / (M * bias))#* (client_lengths[i]/sum(client_lengths)) #
             
-        agg[key] = total #/ M_t #/ len(grads_list)
+        agg[key] = total / M_t#/ M_t #/ len(grads_list)
     return agg
 
 def apply_gradient(model, avg_grad, lr):
